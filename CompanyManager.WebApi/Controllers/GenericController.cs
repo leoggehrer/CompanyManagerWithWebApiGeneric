@@ -19,11 +19,14 @@ namespace CompanyManager.WebApi.Controllers
         where TModel : Models.ModelObject, new()
         where TEntity : Logic.Entities.EntityObject, new()
     {
-        #region fields
-        private const int MaxCount = 500;
-        #endregion fields
-
         #region properties
+        /// <summary>
+        /// Gets the max count.
+        /// </summary>
+        protected virtual int MaxCount { get; } = 500;
+        /// <summary>
+        /// Gets the context accessor.
+        /// </summary>
         protected IContextAccessor ContextAccessor { get; }
         /// <summary>
         /// Gets the context.
@@ -46,6 +49,14 @@ namespace CompanyManager.WebApi.Controllers
         /// <param name="entity">The entity.</param>
         /// <returns>The model.</returns>
         protected abstract TModel ToModel(TEntity entity);
+
+        /// <summary>
+        /// Converts an model to a entity.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The entity.</returns>
+        protected abstract TEntity ToEntity(TModel model, TEntity? entity);
 
         /// <summary>
         /// Gets all models.
@@ -109,13 +120,12 @@ namespace CompanyManager.WebApi.Controllers
             try
             {
                 var dbSet = EntitySet;
-                var entity = new TEntity();
+                var entity = ToEntity(model, null);
 
-                entity.CopyProperties(model);
                 dbSet.Add(entity);
                 Context.SaveChanges();
 
-                return CreatedAtAction("Get", new { id = entity.Id }, Ok(ToModel(entity)));
+                return CreatedAtAction("Get", new { id = entity.Id }, ToModel(entity));
             }
             catch (Exception ex)
             {
@@ -142,7 +152,8 @@ namespace CompanyManager.WebApi.Controllers
 
                 if (entity != null)
                 {
-                    entity.CopyProperties(model);
+                    model.Id = id;
+                    entity = ToEntity(model, entity);
                     Context.SaveChanges();
                 }
                 return entity == null ? NotFound() : Ok(ToModel(entity));

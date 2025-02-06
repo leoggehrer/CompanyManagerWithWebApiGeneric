@@ -2,8 +2,7 @@
 
 **Lernziele:**
 
-- Wie eine generische Klasse für die standard (GET, POST, PUT, PATCH und DELETE) REST-API-Operationen erstellt wird. mit ASP.NET Core Web API erstellt, konfiguriert und mit einer SQLite-Datenbank verbunden wird.
-
+- Wie eine generische Klasse für die standard (GET, POST, PUT, PATCH und DELETE) REST-API-Operationen erstellt wird.
 
 **Hinweis:** Als Startpunkt wird die Vorlage [CompanyManagerWithWebApi](https://github.com/leoggehrer/CompanyManagerWithWebApi) verwendet.
 
@@ -13,340 +12,56 @@ Bevor mit der Umsetzung begonnen wird, sollte die Vorlage heruntergeladen und di
 
 ### Analyse der Kontroller `CompaniesController`, `CustomersController` und `EmployeesController`
 
-Wenn Sie die genannten Kontroller gegenüberstellen, dann werden Sie nur einen kleinen Teil 
-
-- Erstellen Sie ein neues Projekt vom Typ **ASP.NET Core Web API** und vergeben Sie den Namen **CompanyManager.WebApi**.
-- Verbinden Sie das Projekt **CompanyManager.WebApi** mit dem Projekt **CompanyManager.Logic**.
-
-### Packages installieren
-
-- Fügen Sie das Package `System.Linq.Dynamic.Core` hinzu, um Zeichenfolgen (strings) in LINQ-Abfragen zu verwenden. 
-- Fügen Sie das Package `Microsoft.AspNetCore.JsonPatch` 
-- und das Package `Microsoft.AspNetCore.Mvc.NewtonsoftJson`dem Projekt hinzu.
-  
-Das Hinzufügen des Packages erfolgt im Konsole-Programm und die Anleitung dazu finden Sie [hier](https://github.com/leoggehrer/Slides/tree/main/NutgetInstall).
-
-Initialisieren Sie die `NewtonsoftJson`-Bibliothek mit der folgenden Zeile in der Klasse `Program`.
+Wenn Sie die genannten Kontroller gegenüberstellen, dann werden Sie feststellen, dass nur geringe Programm-Teile unterschiedlich sind. Dies ist ein Hinweis darauf, dass wir einen **generischen-Kontroller** entwickeln können. Betrachten wir dazu die folgenden Programm-Ausschnitte:
 
 ```csharp
-...
-builder.Services.AddControllers()
-                .AddNewtonsoftJson();   // Add this to the controllers for PATCH-operation.
-...
-```
-
-### Erstellen der Models
-
-Erstellen Sie im Projekt **CompanyManager.WebApi** einen Ordner **Models** und fügen Sie die Klassen **Company**, **Customer** und **Employee** hinzu.
-
-Nachfolgend ein Beispiel für das **Company**-Model:
-
-```csharp
-/// <summary>
-/// Represents a company entity.
-/// </summary>
-public class Company : ModelObject, Logic.Contracts.ICompany
+namespace CompanyManager.WebApi.Controllers
 {
-    /// <summary>
-    /// Gets or sets the name of the company.
-    /// </summary>
-    public string Name { get; set; } = string.Empty;
+    using TModel = Models.Company;
+    using TEntity = Logic.Entities.Company;
 
-    /// <summary>
-    /// Gets or sets the address of the company.
-    /// </summary>
-    public string? Address { get; set; }
-
-    /// <summary>
-    /// Gets or sets the description of the company.
-    /// </summary>
-    public string? Description { get; set; }
-
-    /// <summary>
-    /// Copies the properties from another company instance.
-    /// </summary>
-    /// <param name="other">The company instance to copy properties from.</param>
-    public virtual void CopyProperties(Logic.Contracts.ICompany other)
+    [Route("api/[controller]")]
+    [ApiController]
+    public class CompaniesController : ControllerBase
     {
-        base.CopyProperties(other);
+        private const int MaxCount = 500;
 
-        Name = other.Name;
-        Address = other.Address;
-        Description = other.Description;
-    }
+        protected Logic.Contracts.IContext GetContext()
+        {
+            return Logic.DataContext.Factory.CreateContext();
+        }
+        protected DbSet<TEntity> GetDbSet(Logic.Contracts.IContext context)
+        {
+            return context.CompanySet;
+        }
+        protected virtual TModel ToModel(TEntity entity)
+        {
+            var result = new TModel();
 
-    /// <summary>
-    /// Creates a new company instance from an existing company.
-    /// </summary>
-    /// <param name="company">The company instance to copy properties from.</param>
-    /// <returns>A new company instance.</returns>
-    public static Company Create(Logic.Contracts.ICompany company)
-    {
-        var result = new Company();
+            result.CopyProperties(entity);
+            if (entity.Customers != null)
+            {
+                result.Customers = entity.Customers.Select(e => Models.Customer.Create(e)).ToArray();
+            }
+            return result;
+        }
 
-        result.CopyProperties(company);
-        return result;
+        [HttpGet]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public ActionResult<IEnumerable<TModel>> Get()
+        {
+            using var context = GetContext();
+            var dbSet = GetDbSet(context);
+            var querySet = dbSet.AsQueryable().AsNoTracking();
+            var query = querySet.Take(MaxCount).ToArray();
+            var result = query.Select(e => ToModel(e));
+
+            return Ok(result);
+        }
+    ...
     }
 }
-```
 
-Diese Implementierung kann als Vorlage für alle anderen Models verwendet werden.
-
-**Erläuterung:**
-
-Die abstrakte Klasse `ModelObject` ist die Basisklasse für alle Models. Es beinhaltet die Eigenschaft `Id` (diese Eigenschaft stellen alle Models bereitstellen) und eine Methode `public virtual void CopyProperties(IIdentifiable other)`.
-Die Klasse **Company** erbt die Eigenschaften und Methoden der Klasse `ModelObject` und ergänzt diese um weitere Eigenschaften und Methoden. Die Methoden `public virtual void CopyProperties(ICompany company)`und das Überschreiben der Methode `public override ToString()` ist für die Entität nicht erforderlich, sind aber im Verlauf für die weitere Entwicklung hilfreich.
-
-```csharp
-/// <summary>
-/// Represents an abstract base class for model objects that are identifiable.
-/// </summary>
-public abstract class ModelObject : Logic.Contracts.IIdentifiable
-{
-    /// <summary>
-    /// Gets or sets the unique identifier for the model object.
-    /// </summary>
-    public int Id { get; set; }
-
-    /// <summary>
-    /// Copies the properties from another identifiable object.
-    /// </summary>
-    /// <param name="other">The other identifiable object to copy properties from.</param>
-    /// <exception cref="ArgumentNullException">Thrown when the other object is null.</exception>
-    public virtual void CopyProperties(Logic.Contracts.IIdentifiable other)
-    {
-        if (other == null) throw new ArgumentNullException(nameof(other));
-
-        Id = other.Id;
-    }
-}
-```
-
-### Erstellen der Kontroller-Klassen
-
-Die Kontroller-Klassen nehmen eine zentrale Rolle innerhalb des **MVC-(Model-View-Controller)** Musters ein. Sie sind für die Verarbeitung von HTTP-Anfragen verantwortlich und steuern die Interaktion zwischen dem Client und der Geschäftslogik der Anwendung.
-
-**Aufgaben der Kontroller-Klassen:**
-
-1. **Annahme und Verarbeitung von HTTP-Anfragen**
-- Ein Controller empfängt HTTP-Anfragen (z. B. GET, POST, PUT, DELETE).
-- Er analysiert die übermittelten Parameter und leitet sie an die entsprechenden Methoden weiter.
-
-2. **Auswahl und Aufruf der Geschäftslogik**
-- Er ruft Services oder Repositories auf, um Daten zu verarbeiten oder aus der Datenbank abzurufen.
-- Die Trennung zwischen Controller und Geschäftslogik wird durch Dependency Injection (DI) ermöglicht.
-
-3. **Verarbeitung und Validierung von Eingaben**
-- Ein Controller validiert die eingehenden Daten mithilfe von Modellvalidierung ([Required], [Range], [StringLength] usw.).
-- Falls die Validierung fehlschlägt, gibt er eine entsprechende Fehlermeldung zurück (400 Bad Request).
-
-4. **Erstellung von HTTP-Antworten**
-- Er generiert und sendet Antworten an den Client in Form von JSON oder XML.
-- Er setzt den passenden HTTP-Statuscode (200 OK, 201 Created, 404 Not Found, 500 Internal Server Error etc.).
-
-5. **Routing und Endpunktverwaltung**
-- Durch Attribute wie [Route] oder [HttpGet] werden Endpunkte definiert, die die Client-Anfragen steuern.
-
-**Wichtige Aspekte eines Controllers:**
-
-| Aspekt | Beschreibung |
-|--------|--------------|
-| `ApiController` | Markiert die Klasse als Web-API-Controller. |
-| `ProductsController` | Der Name der konkrete Klasse muss mit dem Postfix `Controller` enden. | 
-| Route("api/products")	| Definiert die Basis-URL für die API. |
-| HttpGet, HttpPost	| Spezifiziert, welche HTTP-Methoden unterstützt werden. |
-| Ok(), NotFound(), BadRequest() | Erzeugt standardisierte HTTP-Antworten. |
-| CreatedAtAction()	| Gibt eine 201 Created-Antwort mit einer neuen Ressource zurück. |
-
-Im folgenden wird die Kontroller-Klasse `CompaniesController` beispielhaft für alle anderen Entitäten implementiert:
-
-```csharp
-using TModel = Models.Company;
-using TEntity = Logic.Entities.Company;
-
-[Route("api/[controller]")]
-[ApiController]
-public class CompaniesController : ControllerBase
-{
-    private const int MaxCount = 500;
-
-    protected Logic.Contracts.IContext GetContext()
-    {
-        return Logic.DataContext.Factory.CreateContext();
-    }
-    protected DbSet<TEntity> GetDbSet(Logic.Contracts.IContext context)
-    {
-        return context.CompanySet;
-    }
-    protected TModel ToModel(TEntity entity)
-    {
-        var result = new TModel();
-
-        result.CopyProperties(entity);
-        return result;
-    }
-
-    [HttpGet]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<IEnumerable<TModel>> Get()
-    {
-        using var context = GetContext();
-        var dbSet = GetDbSet(context);
-        var querySet = dbSet.AsQueryable().AsNoTracking();
-        var query = querySet.Take(MaxCount).ToArray();
-        var result = query.Select(e => ToModel(e));
-
-        return Ok(result);
-    }
-
-    [HttpGet("/api/[controller]/query/{predicate}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<IEnumerable<TModel>> Query(string predicate)
-    {
-        using var context = GetContext();
-        var dbSet = GetDbSet(context);
-        var querySet = dbSet.AsQueryable().AsNoTracking();
-        var query = querySet.Where(HttpUtility.UrlDecode(predicate)).Take(MaxCount).ToArray();
-        var result = query.Select(e => ToModel(e));
-
-        return Ok(result);
-    }
-
-    [HttpGet("{id}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<TModel?> Get(int id)
-    {
-        using var context = GetContext();
-        var dbSet = GetDbSet(context);
-        var result = dbSet.FirstOrDefault(e => e.Id == id);
-
-        return result == null ? NotFound() : Ok(ToModel(result));
-    }
-
-    [HttpPost]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult<TModel> Post([FromBody] TModel model)
-    {
-        try
-        {
-            using var context = GetContext();
-            var dbSet = GetDbSet(context);
-            var entity = new TEntity();
-
-            entity.CopyProperties(model);
-            dbSet.Add(entity);
-            context.SaveChanges();
-
-            return CreatedAtAction("Get", new { id = entity.Id }, ToModel(entity));
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(ex.Message);
-        }
-    }
-
-    [HttpPut("{id}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult<TModel> Put(int id, [FromBody] TModel model)
-    {
-        try
-        {
-            using var context = GetContext();
-            var dbSet = GetDbSet(context);
-            var entity = dbSet.FirstOrDefault(e => e.Id == id);
-
-            if (entity != null)
-            {
-                entity.CopyProperties(model);
-                context.SaveChanges();
-            }
-            return entity == null ? NotFound() : Ok(ToModel(entity));
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(ex.Message);
-        }
-    }
-
-    [HttpPatch("{id}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult<TModel> Patch(int id, [FromBody] JsonPatchDocument<TModel> patchModel)
-    {
-        try
-        {
-            using var context = GetContext();
-            var dbSet = GetDbSet(context);
-            var entity = dbSet.FirstOrDefault(e => e.Id == id);
-
-            if (entity != null)
-            {
-                var model = ToModel(entity);
-
-                patchModel.ApplyTo(model);
-
-                entity.CopyProperties(model);
-                context.SaveChanges();
-            }
-            return entity == null ? NotFound() : Ok(ToModel(entity));
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(ex.Message);
-        }
-    }
-
-    [HttpDelete("{id}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult Delete(int id)
-    {
-        try
-        {
-            using var context = GetContext();
-            var dbSet = GetDbSet(context);
-            var entity = dbSet.FirstOrDefault(e => e.Id == id);
-
-            if (entity != null)
-            {
-                dbSet.Remove(entity);
-                context.SaveChanges();
-            }
-            return entity == null ? NotFound() : NoContent();
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(ex.Message);
-        }
-    }
-}
-```
-
-Hier ist eine Tabelle, die die wichtigsten HTTP-Methoden (GET, POST, PUT, DELETE, PATCH) in Bezug auf ihre Verwendung in einer Web-API beschreibt:
-
-| HTTP-Methode | Beschreibung | Verwendetes Attribut | Statuscodes (Erfolgsfälle) | Beispiel |
-|--------------|--------------|----------------------|----------------------------|----------|
-| **GET** |	Fordert Daten vom Server an (idempotent).| [HttpGet] | 200 OK, 404 Not Found | GET /api/products |
-| **POST** | Erstellt eine neue Ressource auf dem Server. | [HttpPost] | 201 Created, 400 Bad Request |	POST /api/products mit JSON-Body |
-| **PUT** | Aktualisiert eine gesamte Ressource (idempotent). | [HttpPut] |	200 OK, 204 No Content, 400 Bad Request, 404 Not Found | PUT /api/products/1 mit JSON-Body |
-| **PATCH**	| Aktualisiert eine Ressource teilweise. | [HttpPatch] | 200 OK, 204 No Content, 400 Bad Request, 404 Not Found | PATCH /api/products/1 mit JSON-Body |
-| **DELETE** | Löscht eine Ressource vom Server. | [HttpDelete]	| 200 OK, 204 No Content, 404 Not Found	| DELETE /api/products/1 |
-
-Diese Tabelle gibt einen strukturierten Überblick über die verschiedenen Methoden und deren typische Verwendung in einer Web-API.
-
-#### Die Kontroller `CustomersController` und `EmployeesController` können analog zur `CompaniesController` implementiert werden.
-
-Vorgehensweise:
-
-Kopieren Sie die Klasse `CompaniesController` und benennen Sie sie in `CustomersController` um. Ändern Sie die Typen `Company` in `Customer`. Nachfolgend finden Sie die Änderungen, die Sie vornehmen müssen:
-
-```csharp
 namespace CompanyManager.WebApi.Controllers
 {
     using TModel = Models.Customer;
@@ -366,14 +81,30 @@ namespace CompanyManager.WebApi.Controllers
         {
             return context.CustomerSet;
         }
-        ...
+        protected virtual TModel ToModel(TEntity entity)
+        {
+            var result = new TModel();
+
+            result.CopyProperties(entity);
+            return result;
+        }
+
+        [HttpGet]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public ActionResult<IEnumerable<TModel>> Get()
+        {
+            using var context = GetContext();
+            var dbSet = GetDbSet(context);
+            var querySet = dbSet.AsQueryable().AsNoTracking();
+            var query = querySet.Take(MaxCount).ToArray();
+            var result = query.Select(e => ToModel(e));
+
+            return Ok(result);
+        }
+    ...
     }
 }
-```
 
-Das gleiche Vorgehen gilt für die Klasse `EmployeesController`. Nachfolgend finden Sie die Änderungen, die Sie vornehmen müssen:
-
-```csharp
 namespace CompanyManager.WebApi.Controllers
 {
     using TModel = Models.Employee;
@@ -400,7 +131,568 @@ namespace CompanyManager.WebApi.Controllers
             result.CopyProperties(entity);
             return result;
         }
-        ...
+
+        [HttpGet]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public ActionResult<IEnumerable<TModel>> Get()
+        {
+            using var context = GetContext();
+            var dbSet = GetDbSet(context);
+            var querySet = dbSet.AsQueryable().AsNoTracking();
+            var query = querySet.Take(MaxCount).ToArray();
+            var result = query.Select(e => ToModel(e));
+
+            return Ok(result);
+        }
+    ...
+    }
+}
+```
+
+#### Entwicklung der generischen Klasse `GenericController<TModel, TEntity>`
+
+Wir sehen, dass die Kontroller `CompaniesController`, `CustomersController` und `EmployeesController` sehr ähnlich sind. Die Operation `Get` ist in allen Kontrollern identisch. Die Operationen `Post`, `Put`, `Patch` und `Delete` sind ebenfalls sehr ähnlich. Wir können also eine generische Klasse erstellen, die Standard-REST-API-Operationen implementiert. Dazu arbeiten wir zuerst die Unterschiede heraus. Im Wesentlichen sind die Unterschiede in den folgenden Punkten zu finden:
+
+- Die Typen `TModel` und `TEntity` sind unterschiedlich. 
+- Die Methode `GetDbSet` gibt das entsprechende `DbSet<TEntity>` zurück. 
+- Die Methode `ToModel` konvertiert ein `TEntity`-Objekt in ein `TModel`-Objekt.
+
+Zuerst erstellen wir eine Klasse `ContextAccessor` welche den Zugriff auf den `DbContext` und den entsprechenden `DbSet<TEntity>` ermöglicht. Diese Klasse wird in den Kontainer der 'Dependency Injection (DI)' registriert und der Klasse `GenericController<TModel, TEntity>` referenziert. Der Aufbau der Klasse `ContextAccessor` sieht wie folgt aus:
+
+```csharp
+namespace CompanyManager.WebApi.Contracts
+{
+    public interface IContextAccessor : IDisposable
+    {
+        IContext GetContext();
+        DbSet<TEntity>? GetDbSet<TEntity>() where TEntity : class;
+    }
+}
+
+namespace CompanyManager.WebApi.Controllers
+{
+    /// <summary>
+    /// Provides access to the database context and its DbSets.
+    /// </summary>
+    public sealed class ContextAccessor : IContextAccessor
+    {
+        #region fields
+        private Logic.Contracts.IContext? context = null;
+        #endregion fields
+
+        /// <summary>
+        /// Gets the current context or creates a new one if it doesn't exist.
+        /// </summary>
+        /// <returns>The current context.</returns>
+        public Logic.Contracts.IContext GetContext() => context ??= Logic.DataContext.Factory.CreateContext();
+
+        /// <summary>
+        /// Gets the DbSet for the specified entity type.
+        /// </summary>
+        /// <typeparam name="TEntity">The type of the entity.</typeparam>
+        /// <returns>The DbSet for the specified entity type, or null if the entity type is not recognized.</returns>
+        public DbSet<TEntity>? GetDbSet<TEntity>() where TEntity : class
+        {
+            DbSet<TEntity>? result = default;
+
+            if (typeof(TEntity) == typeof(Logic.Entities.Company))
+            {
+                result = GetContext().CompanySet as DbSet<TEntity>;
+            }
+            else if (typeof(TEntity) == typeof(Logic.Entities.Customer))
+            {
+                result = GetContext().CustomerSet as DbSet<TEntity>;
+            }
+            else if (typeof(TEntity) == typeof(Logic.Entities.Employee))
+            {
+                result = GetContext().EmployeeSet as DbSet<TEntity>;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Disposes the current context.
+        /// </summary>
+        public void Dispose()
+        {
+            context?.Dispose();
+            context = null;
+        }
+    }
+}
+```
+
+Beachten Sie, dass diese Klasse ein `IContext`-Objekt verwaltet. Das `IContext`-Objekt wird in der Methode `GetContext` erstellt, wenn es nicht bereits existiert. Das `IContext`-Objekt ist vom Typ **'Resource-Object'** und muss in der Methode `Dispose` freigegeben werden. 
+
+Die Methode `GetDbSet` gibt das entsprechende `DbSet<TEntity>` in Abhängigkeit des generischen Parameters `TEntity` zurück. Damit ist die Voraussetzung für die Entwicklung der generischen Klasse `GenericController<TModel, TEntity>` geschaffen.
+
+Diese Klasse wird wird in der **'Dependency Injection (DI)'** mit der Schnittstelle `IContextAccessor` registriert. Die Registrierung erfolgt in der Methode `Main(...)` der Klasse `Program`. Der Aufruf sieht wie folgt aus:
+
+```csharp
+...
+// Add ContextAccessor to the services.
+builder.Services.AddScoped<Contracts.IContextAccessor, Controllers.ContextAccessor>();
+...
+```
+
+Die generische Klasse `GenericController<TModel, TEntity>` wird wie folgt implementiert:
+
+```csharp
+namespace CompanyManager.WebApi.Controllers
+{
+    /// <summary>
+    /// A generic controller for handling CRUD operations.
+    /// </summary>
+    /// <typeparam name="TModel">The type of the model.</typeparam>
+    /// <typeparam name="TEntity">The type of the entity.</typeparam>
+    [Route("api/[controller]")]
+    [ApiController]
+    public abstract class GenericController<TModel, TEntity> : ControllerBase
+        where TModel : Models.ModelObject, new()
+        where TEntity : Logic.Entities.EntityObject, new()
+    {
+        #region properties
+        /// <summary>
+        /// Gets the max count.
+        /// </summary>
+        protected virtual int MaxCount { get; } = 500;
+        /// <summary>
+        /// Gets the context accessor.
+        /// </summary>
+        protected IContextAccessor ContextAccessor { get; }
+        /// <summary>
+        /// Gets the context.
+        /// </summary>
+        protected virtual IContext Context => ContextAccessor.GetContext();
+        /// <summary>
+        /// Gets the DbSet.
+        /// </summary>
+        protected virtual DbSet<TEntity> EntitySet => ContextAccessor.GetDbSet<TEntity>() ?? throw new Exception($"Invalid DbSet<{typeof(TEntity)}>");
+        #endregion properties
+
+        protected GenericController(IContextAccessor contextAccessor) 
+        {
+            ContextAccessor = contextAccessor;
+        }
+
+        /// <summary>
+        /// Converts an entity to a model.
+        /// </summary>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The model.</returns>
+        protected abstract TModel ToModel(TEntity entity);
+
+        /// <summary>
+        /// Converts an model to a entity.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The entity.</returns>
+        protected abstract TEntity ToEntity(TModel model, TEntity? entity);
+
+        /// <summary>
+        /// Gets all models.
+        /// </summary>
+        /// <returns>A list of models.</returns>
+        [HttpGet]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public virtual ActionResult<IEnumerable<TModel>> Get()
+        {
+            var dbSet = EntitySet;
+            var querySet = dbSet.AsQueryable().AsNoTracking();
+            var query = querySet.Take(MaxCount).ToArray();
+            var result = query.Select(e => ToModel(e));
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Queries models based on a predicate.
+        /// </summary>
+        /// <param name="predicate">The predicate.</param>
+        /// <returns>A list of models.</returns>
+        [HttpGet("/api/[controller]/query/{predicate}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public virtual ActionResult<IEnumerable<TModel>> Query(string predicate)
+        {
+            var dbSet = EntitySet;
+            var querySet = dbSet.AsQueryable().AsNoTracking();
+            var query = querySet.Where(HttpUtility.UrlDecode(predicate)).Take(MaxCount).ToArray();
+            var result = query.Select(e => ToModel(e)).ToArray();
+
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Gets a model by ID.
+        /// </summary>
+        /// <param name="id">The ID.</param>
+        /// <returns>The model.</returns>
+        [HttpGet("{id}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public virtual ActionResult<TModel?> Get(int id)
+        {
+            var dbSet = EntitySet;
+            var result = dbSet.FirstOrDefault(e => e.Id == id);
+
+            return result == null ? NotFound() : Ok(ToModel(result));
+        }
+
+        /// <summary>
+        /// Creates a new model.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        /// <returns>The created model.</returns>
+        [HttpPost]
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public virtual ActionResult<TModel> Post([FromBody] TModel model)
+        {
+            try
+            {
+                var dbSet = EntitySet;
+                var entity = ToEntity(model, null);
+
+                dbSet.Add(entity);
+                Context.SaveChanges();
+
+                return CreatedAtAction("Get", new { id = entity.Id }, ToModel(entity));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Updates a model by ID.
+        /// </summary>
+        /// <param name="id">The ID.</param>
+        /// <param name="model">The model.</param>
+        /// <returns>The updated model.</returns>
+        [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public virtual ActionResult<TModel> Put(int id, [FromBody] TModel model)
+        {
+            try
+            {
+                var dbSet = EntitySet;
+                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+
+                if (entity != null)
+                {
+                    model.Id = id;
+                    entity = ToEntity(model, entity);
+                    Context.SaveChanges();
+                }
+                return entity == null ? NotFound() : Ok(ToModel(entity));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Partially updates a model by ID.
+        /// </summary>
+        /// <param name="id">The ID.</param>
+        /// <param name="patchModel">The patch document.</param>
+        /// <returns>The updated model.</returns>
+        [HttpPatch("{id}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public virtual ActionResult<TModel> Patch(int id, [FromBody] JsonPatchDocument<TModel> patchModel)
+        {
+            try
+            {
+                var dbSet = EntitySet;
+                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+
+                if (entity != null)
+                {
+                    var model = ToModel(entity);
+
+                    patchModel.ApplyTo(model);
+
+                    entity.CopyProperties(model);
+                    Context.SaveChanges();
+                }
+                return entity == null ? NotFound() : Ok(ToModel(entity));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Deletes a model by ID.
+        /// </summary>
+        /// <param name="id">The ID.</param>
+        /// <returns>No content.</returns>
+        [HttpDelete("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public virtual ActionResult Delete(int id)
+        {
+            try
+            {
+                var dbSet = EntitySet;
+                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+
+                if (entity != null)
+                {
+                    dbSet.Remove(entity);
+                    Context.SaveChanges();
+                }
+                return entity == null ? NotFound() : NoContent();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+    }
+}
+```
+
+Die Klasse `GenericController<TModel, TEntity>` ist eine abstrakte Klasse, die die Standard-REST-API-Operationen implementiert. Die Klasse ist generisch und erwartet die Typen `TModel` und `TEntity`. Die Klasse `TModel` muss von der Klasse `ModelObject` abgeleitet sein und die Klasse `TEntity` muss von der Klasse `EntityObject` abgeleitet sein. Beide generische Parameter müssen einen parameterlosen Konstruktor (`new()`) bereitstellen. Die Klasse `ModelObject` und `EntityObject` sind Basisklassen, die die Methode `CopyProperties` implementieren. Die Methode `CopyProperties` kopiert die Eigenschaften von einem Objekt in ein anderes Objekt. Die Methode `CopyProperties` ist in der Klasse `EntityObject` implementiert und wird von der Klasse `ModelObject` geerbt. Die Methode `CopyProperties` ist in der Klasse `ModelObject` implementiert und wird von der Klasse `TModel` geerbt.
+
+> **Tipp:** Wenn eine generische Klasse konzipiert wird, dann sollten die Klassen-Members als `virtual` definiert werden. Damit können die Members in der abgeleiteten Klassen angepasst werden (`override`). 
+
+Der Konstruktor `protected GenericController(IContextAccessor contextAccessor)` übernimmt die Instanz der Klasse `ContextAccessor` aus der Unterklasse. Die Klasse `ContextAccessor` wird in der **'Dependency Injection (DI)'** registriert und der Unterklasse von `GenericController<TModel, TEntity>` übergeben.
+
+#### Verwendung der Klasse `GenericController<TModel, TEntity>`
+
+Nun kann die generische Klasse angewendet werden und die konkreten Klassen `CompaniesController`, `CustomersController` und `EmployeesController` erstellt werden.
+
+Die Klasse `CompaniesController` sieht wie folgt aus:
+
+```csharp
+namespace CompanyManager.WebApi.Controllers
+{
+    using TModel = Models.Company;
+    using TEntity = Logic.Entities.Company;
+
+    /// <summary>
+    /// Controller for managing companies.
+    /// </summary>
+    public class CompaniesController : GenericController<TModel, TEntity>
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CompaniesController"/> class.
+        /// </summary>
+        /// <param name="contextAccessor">The context accessor.</param>
+        public CompaniesController(Contracts.IContextAccessor contextAccessor)
+            : base(contextAccessor)
+        {
+        }
+
+        /// <summary>
+        /// Converts an entity to a model.
+        /// </summary>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The model.</returns>
+        protected override TModel ToModel(TEntity entity)
+        {
+            var result = new TModel();
+
+            result.CopyProperties(entity);
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a model to an entity.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The entity.</returns>
+        protected override TEntity ToEntity(TModel model, TEntity? entity)
+        {
+            var result = entity ??= new TEntity();
+
+            result.CopyProperties(model);
+            return result;
+        }
+    }
+}
+```
+
+In der konkreten Klasse müssen nur noch die abstrakten Members implementiert werden. Die Methode `ToModel` konvertiert ein `TEntity`-Objekt in ein `TModel`-Objekt. Die Methode `ToEntity` konvertiert ein `TModel`-Objekt in ein `TEntity`-Objekt. Die Methode `ToEntity` wird in der Methode `Post` und `Put` verwendet. Die Methode `ToModel` wird in der Methode `Get` verwendet.
+
+Diese Vorlage kann für die Klassen `CustomersController` und `EmployeesController` übernommen werden. Die Klassen `CustomersController` und `EmployeesController` sehen wie folgt aus:
+
+```csharp
+namespace CompanyManager.WebApi.Controllers
+{
+    using TModel = Models.Customer;
+    using TEntity = Logic.Entities.Customer;
+
+    /// <summary>
+    /// Controller for handling customer-related operations.
+    /// </summary>
+    public class CustomersController : GenericController<TModel, TEntity>
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CustomersController"/> class.
+        /// </summary>
+        /// <param name="contextAccessor">The context accessor.</param>
+        public CustomersController(Contracts.IContextAccessor contextAccessor)
+            : base(contextAccessor)
+        {
+        }
+
+        /// <summary>
+        /// Converts an entity to a model.
+        /// </summary>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The model.</returns>
+        protected override TModel ToModel(TEntity entity)
+        {
+            var result = new TModel();
+
+            result.CopyProperties(entity);
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a model to an entity.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The entity.</returns>
+        protected override TEntity ToEntity(TModel model, TEntity? entity)
+        {
+            var result = entity ??= new TEntity();
+
+            result.CopyProperties(model);
+            return result;
+        }
+    }
+}
+
+namespace CompanyManager.WebApi.Controllers
+{
+    using TModel = Models.Employee;
+    using TEntity = Logic.Entities.Employee;
+
+    /// <summary>
+    /// Controller for handling Employee related operations.
+    /// </summary>
+    public class EmployeesController : GenericController<TModel, TEntity>
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="EmployeesController"/> class.
+        /// </summary>
+        /// <param name="contextAccessor">The context accessor.</param>
+        public EmployeesController(Contracts.IContextAccessor contextAccessor)
+            : base(contextAccessor)
+        {
+        }
+
+        /// <summary>
+        /// Converts an entity to a model.
+        /// </summary>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The model.</returns>
+        protected override TModel ToModel(TEntity entity)
+        {
+            var result = new TModel();
+
+            result.CopyProperties(entity);
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a model to an entity.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The entity.</returns>
+        protected override TEntity ToEntity(TModel model, TEntity? entity)
+        {
+            var result = entity ??= new TEntity();
+
+            result.CopyProperties(model);
+            return result;
+        }
+    }
+}
+```
+
+#### Anpassung einer Kontroller-Klasse
+
+In diesen Abschnitt soll die Anpassung der Operation `Get(int id)` in der Klasse `CompaniesController` gezeigt werden. Die Operation `Get(int id)` wird in der Klasse `GenericController<TModel, TEntity>` implementiert. Die Methode `Get(int id)` wird in der Klasse `CompaniesController` überschrieben, um die Navigationseigenschaften `Customers` zu laden. Die geänderte Klasse `CompaniesController` sieht wie folgt aus:
+
+```csharp
+namespace CompanyManager.WebApi.Controllers
+{
+    using TModel = Models.Company;
+    using TEntity = Logic.Entities.Company;
+
+    /// <summary>
+    /// Controller for managing companies.
+    /// </summary>
+    public class CompaniesController : GenericController<TModel, TEntity>
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CompaniesController"/> class.
+        /// </summary>
+        /// <param name="contextAccessor">The context accessor.</param>
+        public CompaniesController(Contracts.IContextAccessor contextAccessor)
+            : base(contextAccessor)
+        {
+        }
+
+        /// <summary>
+        /// Converts an entity to a model.
+        /// </summary>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The model.</returns>
+        protected override TModel ToModel(TEntity entity)
+        {
+            var result = new TModel();
+
+            result.CopyProperties(entity);
+            if (entity.Customers != null)
+            {
+                result.Customers = entity.Customers.Select(e => Models.Customer.Create(e)).ToArray();
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a model to an entity.
+        /// </summary>
+        /// <param name="model">The model.</param>
+        /// <param name="entity">The entity.</param>
+        /// <returns>The entity.</returns>
+        protected override TEntity ToEntity(TModel model, TEntity? entity)
+        {
+            var result = entity ??= new TEntity();
+
+            result.CopyProperties(model);
+            return result;
+        }
+
+        /// <summary>
+        /// Gets a company by ID.
+        /// </summary>
+        /// <param name="id">The ID.</param>
+        /// <returns>The company model.</returns>
+        public override ActionResult<TModel?> Get(int id)
+        {
+            var dbSet = EntitySet.Include(e => e.Customers);
+            var result = dbSet.FirstOrDefault(e => e.Id == id);
+
+            return result == null ? NotFound() : Ok(ToModel(result));
+        }
     }
 }
 ```
