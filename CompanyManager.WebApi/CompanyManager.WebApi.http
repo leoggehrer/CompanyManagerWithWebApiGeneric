@@ -1,0 +1,6 @@
+@CompanyManager.WebApi_HostAddress = http://localhost:5096
+
+GET {{CompanyManager.WebApi_HostAddress}}/api/
+Accept: application/json
+
+###
