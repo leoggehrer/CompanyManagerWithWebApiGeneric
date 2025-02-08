@@ -2,7 +2,7 @@
 
 **Lernziele:**
 
-- Wie eine generische Klasse für die standard (GET, POST, PUT, PATCH und DELETE) REST-API-Operationen erstellt wird.
+- Wie eine generische Klasse für die Standard (GET, POST, PUT, PATCH und DELETE) REST-API-Operationen erstellt wird.
 
 **Hinweis:** Als Startpunkt wird die Vorlage [CompanyManagerWithWebApi](https://github.com/leoggehrer/CompanyManagerWithWebApi) verwendet.
 
@@ -10,9 +10,9 @@
 
 Bevor mit der Umsetzung begonnen wird, sollte die Vorlage heruntergeladen und die Funktionalität verstanden werden.
 
-### Analyse der Kontroller `CompaniesController`, `CustomersController` und `EmployeesController`
+### Analyse der Controller `CompaniesController`, `CustomersController` und `EmployeesController`
 
-Wenn Sie die genannten Kontroller gegenüberstellen, dann werden Sie feststellen, dass nur geringe Programm-Teile unterschiedlich sind. Dies ist ein Hinweis darauf, dass wir einen **generischen-Kontroller** entwickeln können. Betrachten wir dazu die folgenden Programm-Ausschnitte:
+Wenn Sie die genannten Controller gegenüberstellen, dann werden Sie feststellen, dass nur geringe Programm-Teile unterschiedlich sind. Dies ist ein Hinweis darauf, dass wir einen **generischen-Controller** entwickeln können. Betrachten wir dazu die folgenden Programm-Ausschnitte:
 
 ```csharp
 namespace CompanyManager.WebApi.Controllers
@@ -151,13 +151,13 @@ namespace CompanyManager.WebApi.Controllers
 
 #### Entwicklung der generischen Klasse `GenericController<TModel, TEntity>`
 
-Wir sehen, dass die Kontroller `CompaniesController`, `CustomersController` und `EmployeesController` sehr ähnlich sind. Die Operation `Get` ist in allen Kontrollern identisch. Die Operationen `Post`, `Put`, `Patch` und `Delete` sind ebenfalls sehr ähnlich. Wir können also eine generische Klasse erstellen, die Standard-REST-API-Operationen implementiert. Dazu arbeiten wir zuerst die Unterschiede heraus. Im Wesentlichen sind die Unterschiede in den folgenden Punkten zu finden:
+Wir sehen, dass die Controller `CompaniesController`, `CustomersController` und `EmployeesController` sehr ähnlich sind. Die Operation `Get` ist in allen Controllern identisch. Die Operationen `Post`, `Put`, `Patch` und `Delete` sind ebenfalls sehr ähnlich. Wir können also eine generische Klasse erstellen, die Standard-REST-API-Operationen implementiert. Dazu arbeiten wir zuerst die Unterschiede heraus. Im Wesentlichen sind die Unterschiede in den folgenden Punkten zu finden:
 
 - Die Typen `TModel` und `TEntity` sind unterschiedlich. 
 - Die Methode `GetDbSet` gibt das entsprechende `DbSet<TEntity>` zurück. 
 - Die Methode `ToModel` konvertiert ein `TEntity`-Objekt in ein `TModel`-Objekt.
 
-Zuerst erstellen wir eine Klasse `ContextAccessor` welche den Zugriff auf den `DbContext` und den entsprechenden `DbSet<TEntity>` ermöglicht. Diese Klasse wird in den Kontainer der 'Dependency Injection (DI)' registriert und der Klasse `GenericController<TModel, TEntity>` referenziert. Der Aufbau der Klasse `ContextAccessor` sieht wie folgt aus:
+Zuerst erstellen wir eine Klasse `ContextAccessor` welche den Zugriff auf den `DbContext` und den entsprechenden `DbSet<TEntity>` ermöglicht. Diese Klasse wird in den Container der 'Dependency Injection (DI)' registriert und der Klasse `GenericController<TModel, TEntity>` referenziert. Der Aufbau der Klasse `ContextAccessor` sieht wie folgt aus:
 
 ```csharp
 namespace CompanyManager.WebApi.Contracts
@@ -226,7 +226,7 @@ Beachten Sie, dass diese Klasse ein `IContext`-Objekt verwaltet. Das `IContext`-
 
 Die Methode `GetDbSet` gibt das entsprechende `DbSet<TEntity>` in Abhängigkeit des generischen Parameters `TEntity` zurück. Damit ist die Voraussetzung für die Entwicklung der generischen Klasse `GenericController<TModel, TEntity>` geschaffen.
 
-Diese Klasse wird wird in der **'Dependency Injection (DI)'** mit der Schnittstelle `IContextAccessor` registriert. Die Registrierung erfolgt in der Methode `Main(...)` der Klasse `Program`. Der Aufruf sieht wie folgt aus:
+Diese Klasse wird in der **'Dependency Injection (DI)'** mit der Schnittstelle `IContextAccessor` registriert. Die Registrierung erfolgt in der Methode `Main(...)` der Klasse `Program`. Der Aufruf sieht wie folgt aus:
 
 ```csharp
 ...
@@ -626,7 +626,7 @@ namespace CompanyManager.WebApi.Controllers
 }
 ```
 
-#### Anpassung einer Kontroller-Klasse
+#### Anpassung einer Controller-Klasse
 
 In diesen Abschnitt soll die Anpassung der Operation `Get(int id)` in der Klasse `CompaniesController` gezeigt werden. Die Operation `Get(int id)` wird in der Klasse `GenericController<TModel, TEntity>` implementiert. Die Methode `Get(int id)` wird in der Klasse `CompaniesController` überschrieben, um die Navigationseigenschaften `Customers` zu laden. Die geänderte Klasse `CompaniesController` sieht wie folgt aus:
 
@@ -705,9 +705,9 @@ namespace CompanyManager.WebApi.Controllers
 GET: https://localhost:7074/api/companies
 ```
 
-Diese Anfrage listed alle `Company`-Einträge im json-Format auf.
+Diese Anfrage listet alle `Company`-Einträge im json-Format auf.
 
-## Hilfsmitteln
+## Hilfsmittel
 
 - keine
 
