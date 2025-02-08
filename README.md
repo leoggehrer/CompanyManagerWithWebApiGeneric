@@ -268,6 +268,10 @@ namespace CompanyManager.WebApi.Controllers
         /// Gets the DbSet.
         /// </summary>
         protected virtual DbSet<TEntity> EntitySet => ContextAccessor.GetDbSet<TEntity>() ?? throw new Exception($"Invalid DbSet<{typeof(TEntity)}>");
+        /// <summary>
+        /// Gets the IQueriable<TEntity>.
+        /// </summary>
+        protected virtual IQueryable<TEntity> QuerySet => EntitySet.AsQueryable();
         #endregion properties
 
         protected GenericController(IContextAccessor contextAccessor) 
@@ -298,9 +302,7 @@ namespace CompanyManager.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public virtual ActionResult<IEnumerable<TModel>> Get()
         {
-            var dbSet = EntitySet;
-            var querySet = dbSet.AsQueryable().AsNoTracking();
-            var query = querySet.Take(MaxCount).ToArray();
+            var query = QuerySet.AsNoTracking().Take(MaxCount).ToArray();
             var result = query.Select(e => ToModel(e));
 
             return Ok(result);
@@ -315,9 +317,7 @@ namespace CompanyManager.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public virtual ActionResult<IEnumerable<TModel>> Query(string predicate)
         {
-            var dbSet = EntitySet;
-            var querySet = dbSet.AsQueryable().AsNoTracking();
-            var query = querySet.Where(HttpUtility.UrlDecode(predicate)).Take(MaxCount).ToArray();
+            var query = QuerySet.AsNoTracking().Where(HttpUtility.UrlDecode(predicate)).Take(MaxCount).ToArray();
             var result = query.Select(e => ToModel(e)).ToArray();
 
             return Ok(result);
@@ -331,10 +331,9 @@ namespace CompanyManager.WebApi.Controllers
         [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public virtual ActionResult<TModel?> Get(int id)
+        public virtual ActionResult<TModel?> GetById(int id)
         {
-            var dbSet = EntitySet;
-            var result = dbSet.FirstOrDefault(e => e.Id == id);
+            var result = QuerySet.FirstOrDefault(e => e.Id == id);
 
             return result == null ? NotFound() : Ok(ToModel(result));
         }
@@ -351,10 +350,9 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
                 var entity = ToEntity(model, null);
 
-                dbSet.Add(entity);
+                EntitySet.Add(entity);
                 Context.SaveChanges();
 
                 return CreatedAtAction("Get", new { id = entity.Id }, ToModel(entity));
@@ -379,8 +377,7 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
-                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+                var entity = EntitySet.FirstOrDefault(e => e.Id == id);
 
                 if (entity != null)
                 {
@@ -410,8 +407,7 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
-                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+                var entity = EntitySet.FirstOrDefault(e => e.Id == id);
 
                 if (entity != null)
                 {
@@ -443,12 +439,11 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
-                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+                var entity = EntitySet.FirstOrDefault(e => e.Id == id);
 
                 if (entity != null)
                 {
-                    dbSet.Remove(entity);
+                    EntitySet.Remove(entity);
                     Context.SaveChanges();
                 }
                 return entity == null ? NotFound() : NoContent();
@@ -642,6 +637,27 @@ namespace CompanyManager.WebApi.Controllers
     public class CompaniesController : GenericController<TModel, TEntity>
     {
         /// <summary>
+        /// Gets the query set for the entity.
+        /// </summary>
+        protected override IQueryable<TEntity> QuerySet
+        {
+            get
+            {
+                var result = default(IQueryable<TEntity>);
+
+                // If the action is 'GetById(...)', then include the customers in the query.
+                if (ControllerContext.ActionDescriptor.ActionName == nameof(GetById))
+                {
+                    result = EntitySet.Include(e => e.Customers).AsQueryable();
+                }
+                else
+                {
+                    result = EntitySet.AsQueryable();
+                }
+                return result;
+            }
+        }
+        /// <summary>
         /// Initializes a new instance of the <see cref="CompaniesController"/> class.
         /// </summary>
         /// <param name="contextAccessor">The context accessor.</param>
@@ -680,19 +696,6 @@ namespace CompanyManager.WebApi.Controllers
             result.CopyProperties(model);
             return result;
         }
-
-        /// <summary>
-        /// Gets a company by ID.
-        /// </summary>
-        /// <param name="id">The ID.</param>
-        /// <returns>The company model.</returns>
-        public override ActionResult<TModel?> Get(int id)
-        {
-            var dbSet = EntitySet.Include(e => e.Customers);
-            var result = dbSet.FirstOrDefault(e => e.Id == id);
-
-            return result == null ? NotFound() : Ok(ToModel(result));
-        }
     }
 }
 ```
@@ -702,7 +705,11 @@ namespace CompanyManager.WebApi.Controllers
 - Testen Sie die REST-API mit dem Programm **Postman**. Ein `GET`-Request sieht wie folgt aus:
 
 ```bash
+// In dieser Anfrage werden alle `Company`-Einträge im json-Format aufgelistet.
 GET: https://localhost:7074/api/companies
+
+// In dieser Anfrage werden alle `Customer`-Einträge zum `Company`-Eintrag geladen und im json-Format aufgelistet.
+GET: https://localhost:7074/api/companies/13
 ```
 
 Diese Anfrage listet alle `Company`-Einträge im json-Format auf.

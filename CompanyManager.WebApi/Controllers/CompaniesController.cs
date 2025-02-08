@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Linq.Dynamic.Core;
 
 namespace CompanyManager.WebApi.Controllers
@@ -12,12 +13,16 @@ namespace CompanyManager.WebApi.Controllers
     /// </summary>
     public class CompaniesController : GenericController<TModel, TEntity>
     {
+        /// <summary>
+        /// Gets the query set for the entity.
+        /// </summary>
         protected override IQueryable<TEntity> QuerySet
         {
             get
             {
                 var result = default(IQueryable<TEntity>);
 
+                // If the action is 'GetById(...)', then include the customers in the query.
                 if (ControllerContext.ActionDescriptor.ActionName == nameof(GetById))
                 {
                     result = EntitySet.Include(e => e.Customers).AsQueryable();
@@ -26,10 +31,10 @@ namespace CompanyManager.WebApi.Controllers
                 {
                     result = EntitySet.AsQueryable();
                 }
-
                 return result;
             }
         }
+
         /// <summary>
         /// Initializes a new instance of the <see cref="CompaniesController"/> class.
         /// </summary>
