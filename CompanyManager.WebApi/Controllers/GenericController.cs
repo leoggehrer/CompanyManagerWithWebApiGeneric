@@ -70,8 +70,7 @@ namespace CompanyManager.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public virtual ActionResult<IEnumerable<TModel>> Get()
         {
-            var querySet = QuerySet.AsNoTracking();
-            var query = querySet.Take(MaxCount).ToArray();
+            var query = QuerySet.AsNoTracking().Take(MaxCount).ToArray();
             var result = query.Select(e => ToModel(e));
 
             return Ok(result);
@@ -86,8 +85,7 @@ namespace CompanyManager.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public virtual ActionResult<IEnumerable<TModel>> Query(string predicate)
         {
-            var querySet = QuerySet.AsNoTracking();
-            var query = querySet.Where(HttpUtility.UrlDecode(predicate)).Take(MaxCount).ToArray();
+            var query = QuerySet.AsNoTracking().Where(HttpUtility.UrlDecode(predicate)).Take(MaxCount).ToArray();
             var result = query.Select(e => ToModel(e)).ToArray();
 
             return Ok(result);
@@ -103,8 +101,7 @@ namespace CompanyManager.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public virtual ActionResult<TModel?> GetById(int id)
         {
-            var querySet = QuerySet;
-            var result = querySet.FirstOrDefault(e => e.Id == id);
+            var result = QuerySet.FirstOrDefault(e => e.Id == id);
 
             return result == null ? NotFound() : Ok(ToModel(result));
         }
@@ -121,10 +118,9 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
                 var entity = ToEntity(model, null);
 
-                dbSet.Add(entity);
+                EntitySet.Add(entity);
                 Context.SaveChanges();
 
                 return CreatedAtAction("Get", new { id = entity.Id }, ToModel(entity));
@@ -149,8 +145,7 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
-                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+                var entity = EntitySet.FirstOrDefault(e => e.Id == id);
 
                 if (entity != null)
                 {
@@ -180,8 +175,7 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
-                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+                var entity = EntitySet.FirstOrDefault(e => e.Id == id);
 
                 if (entity != null)
                 {
@@ -213,12 +207,11 @@ namespace CompanyManager.WebApi.Controllers
         {
             try
             {
-                var dbSet = EntitySet;
-                var entity = dbSet.FirstOrDefault(e => e.Id == id);
+                var entity = EntitySet.FirstOrDefault(e => e.Id == id);
 
                 if (entity != null)
                 {
-                    dbSet.Remove(entity);
+                    EntitySet.Remove(entity);
                     Context.SaveChanges();
                 }
                 return entity == null ? NotFound() : NoContent();
