@@ -12,6 +12,24 @@ namespace CompanyManager.WebApi.Controllers
     /// </summary>
     public class CompaniesController : GenericController<TModel, TEntity>
     {
+        protected override IQueryable<TEntity> QuerySet
+        {
+            get
+            {
+                var result = default(IQueryable<TEntity>);
+
+                if (ControllerContext.ActionDescriptor.ActionName == nameof(GetById))
+                {
+                    result = EntitySet.Include(e => e.Customers).AsQueryable();
+                }
+                else
+                {
+                    result = EntitySet.AsQueryable();
+                }
+
+                return result;
+            }
+        }
         /// <summary>
         /// Initializes a new instance of the <see cref="CompaniesController"/> class.
         /// </summary>
@@ -50,19 +68,6 @@ namespace CompanyManager.WebApi.Controllers
 
             result.CopyProperties(model);
             return result;
-        }
-
-        /// <summary>
-        /// Gets a company by ID.
-        /// </summary>
-        /// <param name="id">The ID.</param>
-        /// <returns>The company model.</returns>
-        public override ActionResult<TModel?> Get(int id)
-        {
-            var dbSet = EntitySet.Include(e => e.Customers);
-            var result = dbSet.FirstOrDefault(e => e.Id == id);
-
-            return result == null ? NotFound() : Ok(ToModel(result));
         }
     }
 }

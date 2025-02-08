@@ -36,6 +36,10 @@ namespace CompanyManager.WebApi.Controllers
         /// Gets the DbSet.
         /// </summary>
         protected virtual DbSet<TEntity> EntitySet => ContextAccessor.GetDbSet<TEntity>() ?? throw new Exception($"Invalid DbSet<{typeof(TEntity)}>");
+        /// <summary>
+        /// Gets the IQueriable<TEntity>.
+        /// </summary>
+        protected virtual IQueryable<TEntity> QuerySet => EntitySet.AsQueryable();
         #endregion properties
 
         protected GenericController(IContextAccessor contextAccessor) 
@@ -66,8 +70,7 @@ namespace CompanyManager.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public virtual ActionResult<IEnumerable<TModel>> Get()
         {
-            var dbSet = EntitySet;
-            var querySet = dbSet.AsQueryable().AsNoTracking();
+            var querySet = QuerySet.AsNoTracking();
             var query = querySet.Take(MaxCount).ToArray();
             var result = query.Select(e => ToModel(e));
 
@@ -83,8 +86,7 @@ namespace CompanyManager.WebApi.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         public virtual ActionResult<IEnumerable<TModel>> Query(string predicate)
         {
-            var dbSet = EntitySet;
-            var querySet = dbSet.AsQueryable().AsNoTracking();
+            var querySet = QuerySet.AsNoTracking();
             var query = querySet.Where(HttpUtility.UrlDecode(predicate)).Take(MaxCount).ToArray();
             var result = query.Select(e => ToModel(e)).ToArray();
 
@@ -99,10 +101,10 @@ namespace CompanyManager.WebApi.Controllers
         [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public virtual ActionResult<TModel?> Get(int id)
+        public virtual ActionResult<TModel?> GetById(int id)
         {
-            var dbSet = EntitySet;
-            var result = dbSet.FirstOrDefault(e => e.Id == id);
+            var querySet = QuerySet;
+            var result = querySet.FirstOrDefault(e => e.Id == id);
 
             return result == null ? NotFound() : Ok(ToModel(result));
         }
